@@ -57,9 +57,6 @@ tokens :-
                                       ++ show (map fromEnum s)) }
 
  
-
-
-
 {
 data Token
   = TokenNum Int
