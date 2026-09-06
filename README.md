@@ -1,6 +1,6 @@
 # LenguajesProgramacion
 
-Integrantes:
+# Integrantes:
 
-Rendón Ávila Jesús Mateo.
-Bastida Prado Tania Araceli.
+- Rendón Ávila Jesús Mateo.
+- Bastida Prado Tania Araceli.
