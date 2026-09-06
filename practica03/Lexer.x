@@ -80,6 +80,7 @@ tokens :-
     t                    { \_ -> TokenId "t" }
     u                    { \_ -> TokenId "u" }
     v                    { \_ -> TokenId "v" }
+    w                    { \_ -> TokenId "w" }
     x                    { \_ -> TokenId "x" }
     y                    { \_ -> TokenId "y" }
     z                    { \_ -> TokenId "z" }
