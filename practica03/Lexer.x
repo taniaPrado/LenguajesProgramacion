@@ -48,6 +48,44 @@ tokens :-
   -- RETO 1
   -- Agrega, en el orden correcto, las reglas para:
   --   let, let* e identificadores.
+    \0                   { \_ -> TokenNum 0 }
+    \1                   { \_ -> TokenNum 1 }
+    \2                   { \_ -> TokenNum 2 }
+    \3                   { \_ -> TokenNum 3 }
+    \4                   { \_ -> TokenNum 4 }
+    \5                   { \_ -> TokenNum 5 }
+    \6                   { \_ -> TokenNum 6 }
+    \7                   { \_ -> TokenNum 7 }
+    \8                   { \_ -> TokenNum 8 }
+    \9                   { \_ -> TokenNum 9 }
+    a                    { \_ -> TokenId "a" }
+    b                    { \_ -> TokenId "b" }
+    c                    { \_ -> TokenId "c" }
+    d                    { \_ -> TokenId "d" }
+    e                    { \_ -> TokenId "e" }
+    f                    { \_ -> TokenId "f" }
+    g                    { \_ -> TokenId "g" }
+    h                    { \_ -> TokenId "h" }
+    i                    { \_ -> TokenId "i" }
+    j                    { \_ -> TokenId "j" }
+    k                    { \_ -> TokenId "k" }
+    l                    { \_ -> TokenId "l" }
+    m                    { \_ -> TokenId "m" }
+    n                    { \_ -> TokenId "n" }
+    o                    { \_ -> TokenId "o" }
+    p                    { \_ -> TokenId "p" }
+    q                    { \_ -> TokenId "q" }
+    r                    { \_ -> TokenId "r" }
+    s                    { \_ -> TokenId "s" }
+    t                    { \_ -> TokenId "t" }
+    u                    { \_ -> TokenId "u" }
+    v                    { \_ -> TokenId "v" }
+    x                    { \_ -> TokenId "x" }
+    y                    { \_ -> TokenId "y" }
+    z                    { \_ -> TokenId "z" }
+    let                  { \_ -> TokenLet }
+    "let*"               { \_ -> TokenLetStar }
+    
 
   .                     { \s -> error ("Lexical error: caracter no reconocido = "
                                       ++ show s
