@@ -51,7 +51,7 @@ tokens :-
 
     let                   { \_ -> TokenLet }              
     let*                  { \_ -> TokenLetStar }
-    $letter $idrest*      { \s -> TokenId s }
+    $letter $idrest*      { \s -> TokenId s } 
     
 
   .                     { \s -> error ("Lexical error: caracter no reconocido = "
