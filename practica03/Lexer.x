@@ -48,16 +48,7 @@ tokens :-
   -- RETO 1
   -- Agrega, en el orden correcto, las reglas para:
   --   let, let* e identificadores.
-    \0                   { \_ -> TokenNum 0 }
-    \1                   { \_ -> TokenNum 1 }
-    \2                   { \_ -> TokenNum 2 }
-    \3                   { \_ -> TokenNum 3 }
-    \4                   { \_ -> TokenNum 4 }
-    \5                   { \_ -> TokenNum 5 }
-    \6                   { \_ -> TokenNum 6 }
-    \7                   { \_ -> TokenNum 7 }
-    \8                   { \_ -> TokenNum 8 }
-    \9                   { \_ -> TokenNum 9 }
+  
     a                    { \_ -> TokenId "a" }
     b                    { \_ -> TokenId "b" }
     c                    { \_ -> TokenId "c" }
