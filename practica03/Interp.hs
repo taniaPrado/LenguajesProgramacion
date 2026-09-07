@@ -10,7 +10,7 @@ freeVars Boolean = []
 freeVars Id x = [x]
 freeVars Add e1 e2 = freeVars e1 ++ freeVars e2
 freeVars Sub e1 e2 = freeVars e1 ++ freeVars e2 
-freeVars Let x e1 e2 = freeVars e1 ++ freeVars e2 filter (\= x)     
+freeVars Let x e1 e2 = freeVars e1 ++ (freeVars e2 filter (\= x))   
 
 names :: ASA -> [String]
 names = undefined
