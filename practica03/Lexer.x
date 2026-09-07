@@ -48,35 +48,10 @@ tokens :-
   -- RETO 1
   -- Agrega, en el orden correcto, las reglas para:
   --   let, let* e identificadores.
-  
-    a                    { \_ -> TokenId "a" }
-    b                    { \_ -> TokenId "b" }
-    c                    { \_ -> TokenId "c" }
-    d                    { \_ -> TokenId "d" }
-    e                    { \_ -> TokenId "e" }
-    f                    { \_ -> TokenId "f" }
-    g                    { \_ -> TokenId "g" }
-    h                    { \_ -> TokenId "h" }
-    i                    { \_ -> TokenId "i" }
-    j                    { \_ -> TokenId "j" }
-    k                    { \_ -> TokenId "k" }
-    l                    { \_ -> TokenId "l" }
-    m                    { \_ -> TokenId "m" }
-    n                    { \_ -> TokenId "n" }
-    o                    { \_ -> TokenId "o" }
-    p                    { \_ -> TokenId "p" }
-    q                    { \_ -> TokenId "q" }
-    r                    { \_ -> TokenId "r" }
-    s                    { \_ -> TokenId "s" }
-    t                    { \_ -> TokenId "t" }
-    u                    { \_ -> TokenId "u" }
-    v                    { \_ -> TokenId "v" }
-    w                    { \_ -> TokenId "w" }
-    x                    { \_ -> TokenId "x" }
-    y                    { \_ -> TokenId "y" }
-    z                    { \_ -> TokenId "z" }
-    let                  { \_ -> TokenLet }
-    "let*"               { \_ -> TokenLetStar }
+
+    let                   { \_ -> TokenLet }              
+    let*                  { \_ -> TokenLetStar }
+    $letter $idrest*      { \s -> TokenId s }
     
 
   .                     { \s -> error ("Lexical error: caracter no reconocido = "
