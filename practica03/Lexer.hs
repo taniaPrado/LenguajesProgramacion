@@ -1,15 +1,19 @@
-{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
-{-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
-{-# OPTIONS_GHC -fno-warn-unused-imports #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-missing-signatures #-}
 {-# LANGUAGE CPP #-}
 {-# LINE 1 "Lexer.x" #-}
 module Lexer (Token(..), lexer) where
 
 import Data.Char (isSpace)
+#if __GLASGOW_HASKELL__ >= 603
 #include "ghcconfig.h"
-import qualified Data.Array
-import qualified Data.Char
+#elif defined(__GLASGOW_HASKELL__)
+#include "config.h"
+#endif
+#if __GLASGOW_HASKELL__ >= 503
+import Data.Array
+#else
+import Array
+#endif
 #define ALEX_BASIC 1
 -- -----------------------------------------------------------------------------
 -- Alex wrapper code.
@@ -17,30 +21,28 @@ import qualified Data.Char
 -- This code is in the PUBLIC DOMAIN; you may copy it freely and use
 -- it for any purpose whatsoever.
 
-#if defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_MONAD_STRICT_TEXT)
+#if defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING)
 import Control.Applicative as App (Applicative (..))
 #endif
 
-#if defined(ALEX_STRICT_TEXT) || defined (ALEX_POSN_STRICT_TEXT) || defined(ALEX_MONAD_STRICT_TEXT)
-import qualified Data.Text
-#endif
-
 import Data.Word (Word8)
-
 #if defined(ALEX_BASIC_BYTESTRING) || defined(ALEX_POSN_BYTESTRING) || defined(ALEX_MONAD_BYTESTRING)
 
 import Data.Int (Int64)
+import qualified Data.Char
 import qualified Data.ByteString.Lazy     as ByteString
 import qualified Data.ByteString.Internal as ByteString (w2c)
 
 #elif defined(ALEX_STRICT_BYTESTRING)
 
+import qualified Data.Char
 import qualified Data.ByteString          as ByteString
 import qualified Data.ByteString.Internal as ByteString hiding (ByteString)
 import qualified Data.ByteString.Unsafe   as ByteString
 
 #else
 
+import Data.Char (ord)
 import qualified Data.Bits
 
 -- | Encode a Haskell String to a list of Word8 values, in UTF8 format.
@@ -48,7 +50,7 @@ utf8Encode :: Char -> [Word8]
 utf8Encode = uncurry (:) . utf8Encode'
 
 utf8Encode' :: Char -> (Word8, [Word8])
-utf8Encode' c = case go (Data.Char.ord c) of
+utf8Encode' c = case go (ord c) of
                   (x, xs) -> (fromIntegral x, map fromIntegral xs)
  where
   go oc
@@ -95,50 +97,6 @@ alexGetByte (_,_,[],[]) = Nothing
 alexGetByte (p,_,[],(c:s))  = let p' = alexMove p c
                               in case utf8Encode' c of
                                    (b, bs) -> p' `seq`  Just (b, (p', c, bs, s))
-#endif
-
-#if defined (ALEX_STRICT_TEXT)
-type AlexInput = (Char,           -- previous char
-                  [Byte],         -- pending bytes on current char
-                  Data.Text.Text) -- current input string
-
-ignorePendingBytes :: AlexInput -> AlexInput
-ignorePendingBytes (c,_ps,s) = (c,[],s)
-
-alexInputPrevChar :: AlexInput -> Char
-alexInputPrevChar (c,_bs,_s) = c
-
-alexGetByte :: AlexInput -> Maybe (Byte,AlexInput)
-alexGetByte (c,(b:bs),s) = Just (b,(c,bs,s))
-alexGetByte (_,[],s) = case Data.Text.uncons s of
-                            Just (c, cs) ->
-                              case utf8Encode' c of
-                                (b, bs) -> Just (b, (c, bs, cs))
-                            Nothing ->
-                              Nothing
-#endif
-
-#if defined (ALEX_POSN_STRICT_TEXT) || defined(ALEX_MONAD_STRICT_TEXT)
-type AlexInput = (AlexPosn,       -- current position,
-                  Char,           -- previous char
-                  [Byte],         -- pending bytes on current char
-                  Data.Text.Text) -- current input string
-
-ignorePendingBytes :: AlexInput -> AlexInput
-ignorePendingBytes (p,c,_ps,s) = (p,c,[],s)
-
-alexInputPrevChar :: AlexInput -> Char
-alexInputPrevChar (_p,c,_bs,_s) = c
-
-alexGetByte :: AlexInput -> Maybe (Byte,AlexInput)
-alexGetByte (p,c,(b:bs),s) = Just (b,(p,c,bs,s))
-alexGetByte (p,_,[],s) = case Data.Text.uncons s of
-                            Just (c, cs) ->
-                              let p' = alexMove p c
-                              in case utf8Encode' c of
-                                   (b, bs) -> p' `seq`  Just (b, (p', c, bs, cs))
-                            Nothing ->
-                              Nothing
 #endif
 
 #if defined(ALEX_POSN_BYTESTRING) || defined(ALEX_MONAD_BYTESTRING)
@@ -210,7 +168,7 @@ alexGetByte (AlexInput {alexStr=cs,alexBytePos=n}) =
 -- `move_pos' calculates the new position after traversing a given character,
 -- assuming the usual eight character tab stops.
 
-#if defined(ALEX_POSN) || defined(ALEX_MONAD) || defined(ALEX_POSN_BYTESTRING) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_GSCAN) || defined (ALEX_POSN_STRICT_TEXT) || defined(ALEX_MONAD_STRICT_TEXT)
+#if defined(ALEX_POSN) || defined(ALEX_MONAD) || defined(ALEX_POSN_BYTESTRING) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_GSCAN)
 data AlexPosn = AlexPn !Int !Int !Int
         deriving (Eq, Show, Ord)
 
@@ -226,20 +184,14 @@ alexMove (AlexPn a l c) _    = AlexPn (a+1)  l     (c+1)
 -- -----------------------------------------------------------------------------
 -- Monad (default and with ByteString input)
 
-#if defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_MONAD_STRICT_TEXT)
+#if defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING)
 data AlexState = AlexState {
         alex_pos :: !AlexPosn,  -- position at current input location
-#ifdef ALEX_MONAD_STRICT_TEXT
-        alex_inp :: Data.Text.Text,
-        alex_chr :: !Char,
-        alex_bytes :: [Byte],
-#endif /* ALEX_MONAD_STRICT_TEXT */
-#ifdef ALEX_MONAD
+#ifndef ALEX_MONAD_BYTESTRING
         alex_inp :: String,     -- the current input
         alex_chr :: !Char,      -- the character before the input
         alex_bytes :: [Byte],
-#endif /* ALEX_MONAD */
-#ifdef ALEX_MONAD_BYTESTRING
+#else /* ALEX_MONAD_BYTESTRING */
         alex_bpos:: !Int64,     -- bytes consumed so far
         alex_inp :: ByteString.ByteString,      -- the current input
         alex_chr :: !Char,      -- the character before the input
@@ -252,24 +204,15 @@ data AlexState = AlexState {
 
 -- Compile with -funbox-strict-fields for best results!
 
-#ifdef ALEX_MONAD
+#ifndef ALEX_MONAD_BYTESTRING
 runAlex :: String -> Alex a -> Either String a
 runAlex input__ (Alex f)
    = case f (AlexState {alex_bytes = [],
-                        alex_pos = alexStartPos,
-                        alex_inp = input__,
-                        alex_chr = '\n',
-#ifdef ALEX_MONAD_USER_STATE
-                        alex_ust = alexInitUserState,
-#endif
-                        alex_scd = 0}) of Left msg -> Left msg
-                                          Right ( _, a ) -> Right a
-#endif
-
-#ifdef ALEX_MONAD_BYTESTRING
+#else /* ALEX_MONAD_BYTESTRING */
 runAlex :: ByteString.ByteString -> Alex a -> Either String a
 runAlex input__ (Alex f)
    = case f (AlexState {alex_bpos = 0,
+#endif /* ALEX_MONAD_BYTESTRING */
                         alex_pos = alexStartPos,
                         alex_inp = input__,
                         alex_chr = '\n',
@@ -278,21 +221,6 @@ runAlex input__ (Alex f)
 #endif
                         alex_scd = 0}) of Left msg -> Left msg
                                           Right ( _, a ) -> Right a
-#endif
-
-#ifdef ALEX_MONAD_STRICT_TEXT
-runAlex :: Data.Text.Text -> Alex a -> Either String a
-runAlex input__ (Alex f)
-   = case f (AlexState {alex_bytes = [],
-                        alex_pos = alexStartPos,
-                        alex_inp = input__,
-                        alex_chr = '\n',
-#ifdef ALEX_MONAD_USER_STATE
-                        alex_ust = alexInitUserState,
-#endif
-                        alex_scd = 0}) of Left msg -> Left msg
-                                          Right ( _, a ) -> Right a
-#endif
 
 newtype Alex a = Alex { unAlex :: AlexState -> Either String (AlexState, a) }
 
@@ -315,51 +243,28 @@ instance Monad Alex where
                                 Right (s',a) -> unAlex (k a) s'
   return = App.pure
 
-
-#ifdef ALEX_MONAD
 alexGetInput :: Alex AlexInput
 alexGetInput
+#ifndef ALEX_MONAD_BYTESTRING
  = Alex $ \s@AlexState{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} ->
         Right (s, (pos,c,bs,inp__))
-#endif
-
-#ifdef ALEX_MONAD_BYTESTRING
-alexGetInput :: Alex AlexInput
-alexGetInput
+#else /* ALEX_MONAD_BYTESTRING */
  = Alex $ \s@AlexState{alex_pos=pos,alex_bpos=bpos,alex_chr=c,alex_inp=inp__} ->
         Right (s, (pos,c,inp__,bpos))
-#endif
+#endif /* ALEX_MONAD_BYTESTRING */
 
-#ifdef ALEX_MONAD_STRICT_TEXT
-alexGetInput :: Alex AlexInput
-alexGetInput
- = Alex $ \s@AlexState{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} ->
-        Right (s, (pos,c,bs,inp__))
-#endif
-
-#ifdef ALEX_MONAD
 alexSetInput :: AlexInput -> Alex ()
+#ifndef ALEX_MONAD_BYTESTRING
 alexSetInput (pos,c,bs,inp__)
  = Alex $ \s -> case s{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} of
-                    state__@(AlexState{}) -> Right (state__, ())
-#endif
-
-#ifdef ALEX_MONAD_BYTESTRING
-alexSetInput :: AlexInput -> Alex ()
+#else /* ALEX_MONAD_BYTESTRING */
 alexSetInput (pos,c,inp__,bpos)
  = Alex $ \s -> case s{alex_pos=pos,
                        alex_bpos=bpos,
                        alex_chr=c,
                        alex_inp=inp__} of
-                    state__@(AlexState{}) -> Right (state__, ())
-#endif
-
-#ifdef ALEX_MONAD_STRICT_TEXT
-alexSetInput :: AlexInput -> Alex ()
-alexSetInput (pos,c,bs,inp__)
- = Alex $ \s -> case s{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} of
-                    state__@(AlexState{}) -> Right (state__, ())
-#endif
+#endif /* ALEX_MONAD_BYTESTRING */
+                  state__@(AlexState{}) -> Right (state__, ())
 
 alexError :: String -> Alex a
 alexError message = Alex $ const $ Left message
@@ -370,32 +275,20 @@ alexGetStartCode = Alex $ \s@AlexState{alex_scd=sc} -> Right (s, sc)
 alexSetStartCode :: Int -> Alex ()
 alexSetStartCode sc = Alex $ \s -> Right (s{alex_scd=sc}, ())
 
-#if defined(ALEX_MONAD_USER_STATE)
+#if !defined(ALEX_MONAD_BYTESTRING) && defined(ALEX_MONAD_USER_STATE)
 alexGetUserState :: Alex AlexUserState
 alexGetUserState = Alex $ \s@AlexState{alex_ust=ust} -> Right (s,ust)
 
 alexSetUserState :: AlexUserState -> Alex ()
 alexSetUserState ss = Alex $ \s -> Right (s{alex_ust=ss}, ())
-#endif /* defined(ALEX_MONAD_USER_STATE) */
+#endif /* !defined(ALEX_MONAD_BYTESTRING) && defined(ALEX_MONAD_USER_STATE) */
 
-#ifdef ALEX_MONAD
 alexMonadScan = do
+#ifndef ALEX_MONAD_BYTESTRING
   inp__ <- alexGetInput
-  sc <- alexGetStartCode
-  case alexScan inp__ sc of
-    AlexEOF -> alexEOF
-    AlexError ((AlexPn _ line column),_,_,_) -> alexError $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
-    AlexSkip  inp__' _len -> do
-        alexSetInput inp__'
-        alexMonadScan
-    AlexToken inp__' len action -> do
-        alexSetInput inp__'
-        action (ignorePendingBytes inp__) len
-#endif
-
-#ifdef ALEX_MONAD_BYTESTRING
-alexMonadScan = do
+#else /* ALEX_MONAD_BYTESTRING */
   inp__@(_,_,_,n) <- alexGetInput
+#endif /* ALEX_MONAD_BYTESTRING */
   sc <- alexGetStartCode
   case alexScan inp__ sc of
     AlexEOF -> alexEOF
@@ -403,40 +296,22 @@ alexMonadScan = do
     AlexSkip  inp__' _len -> do
         alexSetInput inp__'
         alexMonadScan
-    AlexToken inp__'@(_,_,_,n') _ action -> let len = n'-n in do
-        alexSetInput inp__'
-        action (ignorePendingBytes inp__) len
-#endif
-
-#ifdef ALEX_MONAD_STRICT_TEXT
-alexMonadScan = do
-  inp__ <- alexGetInput
-  sc <- alexGetStartCode
-  case alexScan inp__ sc of
-    AlexEOF -> alexEOF
-    AlexError ((AlexPn _ line column),_,_,_) -> alexError $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
-    AlexSkip  inp__' _len -> do
-        alexSetInput inp__'
-        alexMonadScan
+#ifndef ALEX_MONAD_BYTESTRING
     AlexToken inp__' len action -> do
+#else /* ALEX_MONAD_BYTESTRING */
+    AlexToken inp__'@(_,_,_,n') _ action -> let len = n'-n in do
+#endif /* ALEX_MONAD_BYTESTRING */
         alexSetInput inp__'
         action (ignorePendingBytes inp__) len
-#endif
 
 -- -----------------------------------------------------------------------------
 -- Useful token actions
 
-#ifdef ALEX_MONAD
+#ifndef ALEX_MONAD_BYTESTRING
 type AlexAction result = AlexInput -> Int -> Alex result
-#endif
-
-#ifdef ALEX_MONAD_BYTESTRING
+#else /* ALEX_MONAD_BYTESTRING */
 type AlexAction result = AlexInput -> Int64 -> Alex result
-#endif
-
-#ifdef ALEX_MONAD_STRICT_TEXT
-type AlexAction result = AlexInput -> Int -> Alex result
-#endif
+#endif /* ALEX_MONAD_BYTESTRING */
 
 -- just ignore this token and scan another one
 -- skip :: AlexAction result
@@ -452,22 +327,14 @@ andBegin :: AlexAction result -> Int -> AlexAction result
   alexSetStartCode code
   action input__ len
 
-#ifdef ALEX_MONAD
+#ifndef ALEX_MONAD_BYTESTRING
 token :: (AlexInput -> Int -> token) -> AlexAction token
-token t input__ len = return (t input__ len)
-#endif
-
-#ifdef ALEX_MONAD_BYTESTRING
+#else /* ALEX_MONAD_BYTESTRING */
 token :: (AlexInput -> Int64 -> token) -> AlexAction token
+#endif /* ALEX_MONAD_BYTESTRING */
 token t input__ len = return (t input__ len)
-#endif
+#endif /* defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING) */
 
-#ifdef ALEX_MONAD_STRICT_TEXT
-token :: (AlexInput -> Int -> token) -> AlexAction token
-token t input__ len = return (t input__ len)
-#endif
-
-#endif /* defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_MONAD_STRICT_TEXT) */
 
 -- -----------------------------------------------------------------------------
 -- Basic wrapper
@@ -528,28 +395,6 @@ alexScanTokens str = go (AlexInput '\n' str 0)
 
 #endif
 
-#ifdef ALEX_STRICT_TEXT
--- alexScanTokens :: Data.Text.Text -> [token]
-alexScanTokens str = go ('\n',[],str)
-  where go inp__@(_,_bs,s) =
-          case alexScan inp__ 0 of
-                AlexEOF -> []
-                AlexError _ -> error "lexical error"
-                AlexSkip  inp__' _len  -> go inp__'
-                AlexToken inp__' len act -> act (Data.Text.take len s) : go inp__'
-#endif
-
-#ifdef ALEX_POSN_STRICT_TEXT
--- alexScanTokens :: Data.Text.Text -> [token]
-alexScanTokens str = go (alexStartPos,'\n',[],str)
-  where go inp__@(pos,_,_bs,s) =
-          case alexScan inp__ 0 of
-                AlexEOF -> []
-                AlexError ((AlexPn _ line column),_,_,_) -> error $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
-                AlexSkip  inp__' _len  -> go inp__'
-                AlexToken inp__' len act -> act pos (Data.Text.take len s) : go inp__'
-#endif
-
 
 -- -----------------------------------------------------------------------------
 -- Posn wrapper
@@ -604,970 +449,2609 @@ alex_gscan stop__ p c bs inp__ (sc,state__) =
 #endif
 alex_tab_size :: Int
 alex_tab_size = 8
-alex_base :: Data.Array.Array Int Int
-alex_base = Data.Array.listArray (0 :: Int, 84)
+alex_base :: Array Int Int
+alex_base = listArray (0 :: Int, 57)
   [ 1
-  , 0
-  , 0
-  , 81
-  , 91
-  , 101
-  , 0
-  , 57
-  , 0
-  , 0
-  , 0
-  , 97
-  , 0
-  , 112
-  , 0
-  , 113
-  , 0
-  , 47
-  , 0
-  , 0
-  , 64
-  , 0
-  , 104
-  , 105
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 158
-  , 0
-  , 0
-  , 55
-  , 168
-  , 74
-  , 75
-  , 62
-  , 63
-  , 296
-  , 424
-  , 0
-  , 65
-  , 0
-  , 488
-  , 66
-  , 744
-  , 0
-  , 136
-  , 67
-  , 78
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
+  , 198
+  , 273
+  , 348
+  , 423
+  , 498
+  , 573
+  , 648
+  , 723
+  , 798
   , 68
-  , 0
-  , 0
-  , 0
-  , 70
   , 69
   , 0
-  , 80
+  , 0
+  , 0
+  , 0
+  , 873
+  , 948
+  , 1023
+  , 1098
+  , 1173
   , 0
   , 0
   , 0
   , 0
+  , 122
   , 0
+  , 0
+  , 1104
+  , 0
+  , 1232
+  , 0
+  , 1345
+  , 1410
+  , 1666
+  , 1667
+  , 1875
+  , 1950
+  , 2025
+  , 2100
+  , 2175
+  , 2250
+  , 2325
+  , 2400
+  , 2481
+  , 2556
+  , 0
+  , 88
+  , 107
+  , 117
   , 0
   , 73
   , 0
+  , 2631
+  , 2706
   , 0
-  , 0
-  , 772
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
+  , 2781
+  , 2856
   ]
 
-alex_table :: Data.Array.Array Int Int
-alex_table = Data.Array.listArray (0 :: Int, 1027)
+alex_table :: Array Int Int
+alex_table = listArray (0 :: Int, 3111)
   [ 0
-  , 2
-  , 1
-  , 84
-  , 83
-  , 82
-  , 81
-  , 80
-  , 79
-  , 78
-  , 32
-  , 32
-  , 32
-  , 32
-  , 32
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 32
-  , 45
-  , 45
-  , 7
-  , 45
-  , 45
-  , 45
-  , 45
-  , 31
-  , 30
   , 27
-  , 29
-  , 45
-  , 28
-  , 45
-  , 26
-  , 3
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 45
-  , 45
-  , 23
-  , 45
-  , 22
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 77
-  , 76
-  , 75
-  , 74
-  , 73
-  , 72
-  , 71
-  , 70
-  , 69
-  , 68
-  , 67
-  , 66
-  , 65
-  , 64
-  , 63
-  , 62
-  , 61
-  , 60
-  , 59
-  , 58
-  , 57
-  , 56
-  , 55
-  , 54
-  , 53
-  , 52
-  , 45
-  , 45
-  , 45
-  , 45
-  , 45
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 4
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 5
-  , 6
-  , 12
-  , 14
-  , 16
-  , 18
-  , 21
-  , 24
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
   , 25
-  , 32
-  , 32
-  , 32
-  , 32
-  , 32
-  , 13
-  , 8
-  , 47
-  , 15
-  , 11
-  , 44
-  , 49
-  , 40
-  , 17
+  , 25
+  , 25
+  , 25
+  , 25
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 25
+  , 27
+  , 27
   , 51
-  , 10
-  , 50
-  , 19
-  , 37
-  , 9
-  , 0
-  , 0
-  , 0
-  , 32
-  , 0
-  , 0
-  , 39
-  , 0
+  , 27
+  , 27
+  , 27
+  , 27
+  , 24
+  , 23
+  , 15
+  , 22
+  , 27
+  , 21
+  , 27
+  , 14
   , 48
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 46
-  , 42
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 35
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 27
+  , 27
+  , 11
+  , 27
+  , 10
+  , 27
+  , 27
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 27
+  , 27
+  , 27
+  , 27
+  , 36
+  , 27
+  , 40
+  , 36
+  , 36
+  , 36
+  , 20
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
   , 41
+  , 36
+  , 19
+  , 42
+  , 36
+  , 36
+  , 36
+  , 16
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 57
+  , 27
+  , 27
+  , 27
+  , 27
+  , 27
+  , 12
+  , 13
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 25
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 49
+  , 50
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 52
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 34
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 28
+  , 35
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
   , 33
+  , 30
+  , 31
+  , 31
+  , 31
+  , 32
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 56
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 55
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 5
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 7
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 17
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 18
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 3
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 6
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 53
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 38
+  , 36
+  , 36
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 35
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
+  , 29
   , 33
-  , 33
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 28
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 0
+  , 34
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 26
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 54
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 37
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 4
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 39
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 43
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 45
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 8
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 9
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
   , 36
   , 46
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , 35
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , 42
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 34
-  , 48
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , 38
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
   , 0
   , 0
   , 0
@@ -1575,9 +3059,74 @@ alex_table = Data.Array.listArray (0 :: Int, 1027)
   , 0
   , 0
   , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
   , 0
   , 0
-  , 20
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
   , 0
   , 0
   , 0
@@ -1585,11 +3134,364 @@ alex_table = Data.Array.listArray (0 :: Int, 1027)
   , 0
   , 0
   , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 44
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
   , 0
   , 0
   , 0
   , 0
   , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 2
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 0
+  , 36
+  , 36
+  , 36
+  , 36
+  , 1
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
   , 0
   , 0
   , 0
@@ -1725,8 +3627,8 @@ alex_table = Data.Array.listArray (0 :: Int, 1027)
   , 0
   ]
 
-alex_check :: Data.Array.Array Int Int
-alex_check = Data.Array.listArray (0 :: Int, 1027)
+alex_check :: Array Int Int
+alex_check = listArray (0 :: Int, 3111)
   [ -1
   , 0
   , 1
@@ -1856,6 +3758,13 @@ alex_check = Data.Array.listArray (0 :: Int, 1027)
   , 125
   , 126
   , 127
+  , 61
+  , 61
+  , 9
+  , 10
+  , 11
+  , 12
+  , 13
   , 48
   , 49
   , 50
@@ -1866,6 +3775,15 @@ alex_check = Data.Array.listArray (0 :: Int, 1027)
   , 55
   , 56
   , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 32
   , 48
   , 49
   , 50
@@ -1887,206 +3805,1126 @@ alex_check = Data.Array.listArray (0 :: Int, 1027)
   , 56
   , 57
   , 102
-  , 63
-  , 49
-  , 49
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
   , 116
-  , 100
-  , 61
-  , 61
-  , 9
-  , 10
-  , 11
-  , 12
-  , 13
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 194
+  , 195
+  , 196
+  , 197
+  , 198
+  , 199
+  , 200
+  , 201
+  , 202
+  , 203
+  , 204
+  , 205
+  , 206
+  , 207
+  , 208
+  , 209
+  , 210
+  , 211
+  , 212
+  , 213
+  , 214
+  , 215
+  , 216
+  , 217
+  , 218
+  , 219
+  , 220
+  , 221
+  , 222
+  , 223
+  , 224
+  , 225
+  , 226
+  , 227
+  , 228
+  , 229
+  , 230
+  , 231
+  , 232
+  , 233
+  , 234
+  , 235
+  , 236
+  , 237
+  , 238
+  , 239
+  , 240
+  , 241
+  , 242
+  , 243
+  , 244
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
   , 98
-  , 116
-  , 112
+  , 99
   , 100
-  , 111
-  , 114
-  , 42
   , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
   , 111
-  , 101
-  , 116
-  , 116
-  , 114
-  , 117
+  , 112
   , 113
-  , -1
-  , -1
-  , -1
-  , 32
-  , -1
-  , -1
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
   , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
   , -1
-  , 194
-  , 195
-  , 196
-  , 197
-  , 198
-  , 199
-  , 200
-  , 201
-  , 202
-  , 203
-  , 204
-  , 205
-  , 206
-  , 207
-  , 208
-  , 209
-  , 210
-  , 211
-  , 212
-  , 213
-  , 214
-  , 215
-  , 216
-  , 217
-  , 218
-  , 219
-  , 220
-  , 221
-  , 222
-  , 223
-  , 224
-  , 225
-  , 226
-  , 227
-  , 228
-  , 229
-  , 230
-  , 231
-  , 232
-  , 233
-  , 234
-  , 235
-  , 236
-  , 237
-  , 238
-  , 239
-  , 240
-  , 241
-  , 242
-  , 243
-  , 244
-  , 191
-  , 192
-  , 193
-  , 194
-  , 195
-  , 196
-  , 197
-  , 198
-  , 199
-  , 200
-  , 201
-  , 202
-  , 203
-  , 204
-  , 205
-  , 206
-  , 207
-  , 208
-  , 209
-  , 210
-  , 211
-  , 212
-  , 213
-  , 214
-  , 215
-  , 216
-  , 217
-  , 218
-  , 219
-  , 220
-  , 221
-  , 222
-  , 223
-  , 224
-  , 225
-  , 226
-  , 227
-  , 228
-  , 229
-  , 230
-  , 231
-  , 232
-  , 233
-  , 234
-  , 235
-  , 236
-  , 237
-  , 238
-  , 239
-  , 240
-  , 241
-  , 242
-  , 243
-  , 244
-  , 245
-  , 246
-  , 247
-  , 248
-  , 249
-  , 250
-  , 251
-  , 252
-  , 253
-  , 254
-  , 255
-  , 143
-  , 144
-  , 145
-  , 146
-  , 147
-  , 148
-  , 149
-  , 150
-  , 151
-  , 152
-  , 153
-  , 154
-  , 155
-  , 156
-  , 157
-  , 158
-  , 159
-  , 160
-  , 161
-  , 162
-  , 163
-  , 164
-  , 165
-  , 166
-  , 167
-  , 168
-  , 169
-  , 170
-  , 171
-  , 172
-  , 173
-  , 174
-  , 175
-  , 176
-  , 177
-  , 178
-  , 179
-  , 180
-  , 181
-  , 182
-  , 183
-  , 184
-  , 185
-  , 186
-  , 187
-  , 188
-  , 189
-  , 190
-  , 191
+  , -1
+  , -1
+  , -1
+  , -1
+  , 63
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
   , 192
   , 193
   , 194
@@ -2279,21 +5117,6 @@ alex_check = Data.Array.listArray (0 :: Int, 1027)
   , 253
   , 254
   , 255
-  , 128
-  , 129
-  , 130
-  , 131
-  , 132
-  , 133
-  , 134
-  , 135
-  , 136
-  , 137
-  , 138
-  , 139
-  , 140
-  , 141
-  , 142
   , 143
   , 144
   , 145
@@ -2407,6 +5230,7 @@ alex_check = Data.Array.listArray (0 :: Int, 1027)
   , 253
   , 254
   , 255
+  , 191
   , 192
   , 193
   , 194
@@ -2599,17 +5423,220 @@ alex_check = Data.Array.listArray (0 :: Int, 1027)
   , 125
   , 126
   , 127
+  , -1
+  , 128
+  , 129
+  , 130
+  , 131
+  , 132
+  , 133
+  , 134
+  , 135
+  , 136
+  , 137
+  , 138
+  , 139
+  , 140
+  , 141
+  , 142
+  , 143
+  , 144
+  , 145
+  , 146
+  , 147
+  , 148
+  , 149
+  , 150
+  , 151
+  , 152
+  , 153
+  , 154
+  , 155
+  , 156
+  , 157
+  , 158
+  , 159
+  , 160
+  , 161
+  , 162
+  , 163
+  , 164
+  , 165
+  , 166
+  , 167
+  , 168
+  , 169
+  , 170
+  , 171
+  , 172
+  , 173
+  , 174
+  , 175
+  , 176
+  , 177
+  , 178
+  , 179
+  , 180
+  , 181
+  , 182
+  , 183
+  , 184
+  , 185
+  , 186
+  , 187
+  , 188
+  , 189
+  , 190
+  , 191
+  , 192
+  , 193
+  , 194
+  , 195
+  , 196
+  , 197
+  , 198
+  , 199
+  , 200
+  , 201
+  , 202
+  , 203
+  , 204
+  , 205
+  , 206
+  , 207
+  , 208
+  , 209
+  , 210
+  , 211
+  , 212
+  , 213
+  , 214
+  , 215
+  , 216
+  , 217
+  , 218
+  , 219
+  , 220
+  , 221
+  , 222
+  , 223
+  , 224
+  , 225
+  , 226
+  , 227
+  , 228
+  , 229
+  , 230
+  , 231
+  , 232
+  , 233
+  , 234
+  , 235
+  , 236
+  , 237
+  , 238
+  , 239
+  , 240
+  , 241
+  , 242
+  , 243
+  , 244
+  , 245
+  , 246
+  , 247
+  , 248
+  , 249
+  , 250
+  , 251
+  , 252
+  , 253
+  , 254
+  , 255
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
   , 100
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
   , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
   , -1
   , -1
   , -1
@@ -2617,11 +5644,970 @@ alex_check = Data.Array.listArray (0 :: Int, 1027)
   , -1
   , -1
   , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
   , -1
   , -1
   , -1
   , -1
   , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 42
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 65
+  , 66
+  , 67
+  , 68
+  , 69
+  , 70
+  , 71
+  , 72
+  , 73
+  , 74
+  , 75
+  , 76
+  , 77
+  , 78
+  , 79
+  , 80
+  , 81
+  , 82
+  , 83
+  , 84
+  , 85
+  , 86
+  , 87
+  , 88
+  , 89
+  , 90
+  , -1
+  , -1
+  , -1
+  , -1
+  , 95
+  , -1
+  , 97
+  , 98
+  , 99
+  , 100
+  , 101
+  , 102
+  , 103
+  , 104
+  , 105
+  , 106
+  , 107
+  , 108
+  , 109
+  , 110
+  , 111
+  , 112
+  , 113
+  , 114
+  , 115
+  , 116
+  , 117
+  , 118
+  , 119
+  , 120
+  , 121
+  , 122
   , -1
   , -1
   , -1
@@ -2757,8 +6743,8 @@ alex_check = Data.Array.listArray (0 :: Int, 1027)
   , -1
   ]
 
-alex_deflt :: Data.Array.Array Int Int
-alex_deflt = Data.Array.listArray (0 :: Int, 84)
+alex_deflt :: Array Int Int
+alex_deflt = listArray (0 :: Int, 57)
   [ -1
   , -1
   , -1
@@ -2785,42 +6771,15 @@ alex_deflt = Data.Array.listArray (0 :: Int, 84)
   , -1
   , -1
   , -1
+  , 27
   , -1
+  , 27
+  , 26
   , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , 34
-  , 43
-  , 43
-  , 34
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , 45
-  , -1
-  , -1
-  , 45
-  , -1
-  , 45
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
+  , 29
+  , 29
+  , 26
+  , 27
   , -1
   , -1
   , -1
@@ -2846,28 +6805,8 @@ alex_deflt = Data.Array.listArray (0 :: Int, 84)
   , -1
   ]
 
-alex_accept = Data.Array.listArray (0 :: Int, 84)
+alex_accept = listArray (0 :: Int, 57)
   [ AlexAccNone
-  , AlexAcc 61
-  , AlexAcc 60
-  , AlexAcc 59
-  , AlexAcc 58
-  , AlexAcc 57
-  , AlexAcc 56
-  , AlexAcc 55
-  , AlexAcc 54
-  , AlexAcc 53
-  , AlexAcc 52
-  , AlexAccNone
-  , AlexAcc 51
-  , AlexAccNone
-  , AlexAcc 50
-  , AlexAccNone
-  , AlexAcc 49
-  , AlexAccNone
-  , AlexAcc 48
-  , AlexAcc 47
-  , AlexAccNone
   , AlexAcc 46
   , AlexAcc 45
   , AlexAcc 44
@@ -2879,26 +6818,9 @@ alex_accept = Data.Array.listArray (0 :: Int, 84)
   , AlexAcc 38
   , AlexAcc 37
   , AlexAcc 36
-  , AlexAccSkip
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
   , AlexAcc 35
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
   , AlexAcc 34
   , AlexAcc 33
-  , AlexAccNone
   , AlexAcc 32
   , AlexAcc 31
   , AlexAcc 30
@@ -2909,7 +6831,17 @@ alex_accept = Data.Array.listArray (0 :: Int, 84)
   , AlexAcc 25
   , AlexAcc 24
   , AlexAcc 23
+  , AlexAccSkip
+  , AlexAccNone
   , AlexAcc 22
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
   , AlexAcc 21
   , AlexAcc 20
   , AlexAcc 19
@@ -2934,68 +6866,53 @@ alex_accept = Data.Array.listArray (0 :: Int, 84)
   , AlexAcc 0
   ]
 
-alex_actions = Data.Array.array (0 :: Int, 62)
-  [ (61,alex_action_24)
-  , (60,alex_action_23)
-  , (59,alex_action_22)
-  , (58,alex_action_22)
-  , (57,alex_action_21)
-  , (56,alex_action_20)
-  , (55,alex_action_61)
-  , (54,alex_action_19)
-  , (53,alex_action_18)
-  , (52,alex_action_17)
-  , (51,alex_action_16)
-  , (50,alex_action_15)
-  , (49,alex_action_14)
-  , (48,alex_action_13)
-  , (47,alex_action_12)
-  , (46,alex_action_11)
-  , (45,alex_action_10)
-  , (44,alex_action_9)
-  , (43,alex_action_8)
-  , (42,alex_action_7)
-  , (41,alex_action_6)
-  , (40,alex_action_5)
-  , (39,alex_action_4)
-  , (38,alex_action_3)
-  , (37,alex_action_2)
-  , (36,alex_action_1)
-  , (35,alex_action_61)
-  , (34,alex_action_60)
-  , (33,alex_action_59)
-  , (32,alex_action_58)
-  , (31,alex_action_57)
-  , (30,alex_action_56)
-  , (29,alex_action_55)
-  , (28,alex_action_54)
-  , (27,alex_action_53)
-  , (26,alex_action_52)
-  , (25,alex_action_51)
-  , (24,alex_action_50)
-  , (23,alex_action_49)
-  , (22,alex_action_48)
-  , (21,alex_action_47)
-  , (20,alex_action_46)
-  , (19,alex_action_45)
-  , (18,alex_action_44)
-  , (17,alex_action_43)
-  , (16,alex_action_42)
-  , (15,alex_action_41)
-  , (14,alex_action_40)
-  , (13,alex_action_39)
-  , (12,alex_action_38)
-  , (11,alex_action_37)
-  , (10,alex_action_36)
-  , (9,alex_action_35)
-  , (8,alex_action_34)
-  , (7,alex_action_33)
-  , (6,alex_action_31)
-  , (5,alex_action_30)
-  , (4,alex_action_29)
-  , (3,alex_action_28)
-  , (2,alex_action_27)
-  , (1,alex_action_26)
+alex_actions = array (0 :: Int, 47)
+  [ (46,alex_action_25)
+  , (45,alex_action_25)
+  , (44,alex_action_15)
+  , (43,alex_action_25)
+  , (42,alex_action_14)
+  , (41,alex_action_25)
+  , (40,alex_action_13)
+  , (39,alex_action_12)
+  , (38,alex_action_11)
+  , (37,alex_action_10)
+  , (36,alex_action_9)
+  , (35,alex_action_8)
+  , (34,alex_action_7)
+  , (33,alex_action_6)
+  , (32,alex_action_5)
+  , (31,alex_action_25)
+  , (30,alex_action_25)
+  , (29,alex_action_25)
+  , (28,alex_action_25)
+  , (27,alex_action_25)
+  , (26,alex_action_4)
+  , (25,alex_action_3)
+  , (24,alex_action_2)
+  , (23,alex_action_1)
+  , (22,alex_action_26)
+  , (21,alex_action_25)
+  , (20,alex_action_25)
+  , (19,alex_action_25)
+  , (18,alex_action_25)
+  , (17,alex_action_25)
+  , (16,alex_action_25)
+  , (15,alex_action_25)
+  , (14,alex_action_25)
+  , (13,alex_action_24)
+  , (12,alex_action_25)
+  , (11,alex_action_23)
+  , (10,alex_action_22)
+  , (9,alex_action_22)
+  , (8,alex_action_21)
+  , (7,alex_action_20)
+  , (6,alex_action_26)
+  , (5,alex_action_19)
+  , (4,alex_action_18)
+  , (3,alex_action_17)
+  , (2,alex_action_16)
+  , (1,alex_action_25)
   , (0,alex_action_25)
   ]
 
@@ -3022,45 +6939,10 @@ alex_action_20 = \_ -> TokenBool False
 alex_action_21 = \s -> error ("Lexical error: natural con cero inicial = "
                                       ++ show s)
 alex_action_22 = \s -> TokenNum (read s)
-alex_action_23 = \_ -> TokenNum 0
-alex_action_24 = \_ -> TokenNum 1
-alex_action_25 = \_ -> TokenNum 2
-alex_action_26 = \_ -> TokenNum 3
-alex_action_27 = \_ -> TokenNum 4
-alex_action_28 = \_ -> TokenNum 5
-alex_action_29 = \_ -> TokenNum 6
-alex_action_30 = \_ -> TokenNum 7
-alex_action_31 = \_ -> TokenNum 8
-alex_action_32 = \_ -> TokenNum 9
-alex_action_33 = \_ -> TokenId "a"
-alex_action_34 = \_ -> TokenId "b"
-alex_action_35 = \_ -> TokenId "c"
-alex_action_36 = \_ -> TokenId "d"
-alex_action_37 = \_ -> TokenId "e"
-alex_action_38 = \_ -> TokenId "f"
-alex_action_39 = \_ -> TokenId "g"
-alex_action_40 = \_ -> TokenId "h"
-alex_action_41 = \_ -> TokenId "i"
-alex_action_42 = \_ -> TokenId "j"
-alex_action_43 = \_ -> TokenId "k"
-alex_action_44 = \_ -> TokenId "l"
-alex_action_45 = \_ -> TokenId "m"
-alex_action_46 = \_ -> TokenId "n"
-alex_action_47 = \_ -> TokenId "o"
-alex_action_48 = \_ -> TokenId "p"
-alex_action_49 = \_ -> TokenId "q"
-alex_action_50 = \_ -> TokenId "r"
-alex_action_51 = \_ -> TokenId "s"
-alex_action_52 = \_ -> TokenId "t"
-alex_action_53 = \_ -> TokenId "u"
-alex_action_54 = \_ -> TokenId "v"
-alex_action_55 = \_ -> TokenId "w"
-alex_action_56 = \_ -> TokenId "x"
-alex_action_57 = \_ -> TokenId "y"
-alex_action_58 = \_ -> TokenId "z"
-alex_action_59 = \_ -> TokenLet
-alex_action_60 = \_ -> TokenLetStar
-alex_action_61 = \s -> error ("Lexical error: caracter no reconocido = "
+alex_action_23 = \_ -> TokenLetStar
+alex_action_24 = \_ -> TokenLet
+alex_action_25 = \s -> TokenId s
+alex_action_26 = \s -> error ("Lexical error: caracter no reconocido = "
                                       ++ show s
                                       ++ " | codepoints = "
                                       ++ show (map fromEnum s))
@@ -3081,16 +6963,12 @@ alex_action_61 = \s -> error ("Lexical error: caracter no reconocido = "
 #  define FAST_INT Int#
 -- Do not remove this comment. Required to fix CPP parsing when using GCC and a clang-compiled alex.
 #  if __GLASGOW_HASKELL__ > 706
-#    define CMP_GEQ(n,m) (((n) >=# (m)) :: Int#)
-#    define CMP_EQ(n,m) (((n) ==# (m)) :: Int#)
-#    define CMP_MKBOOL(x) ((GHC.Exts.tagToEnum# (x)) :: Bool)
+#    define GTE(n,m) (tagToEnum# (n >=# m))
+#    define EQ(n,m) (tagToEnum# (n ==# m))
 #  else
-#    define CMP_GEQ(n,m) (((n) >= (m)) :: Bool)
-#    define CMP_EQ(n,m) (((n) == (m)) :: Bool)
-#    define CMP_MKBOOL(x) ((x) :: Bool)
+#    define GTE(n,m) (n >=# m)
+#    define EQ(n,m) (n ==# m)
 #  endif
-#  define GTE(n,m) CMP_MKBOOL(CMP_GEQ(n,m))
-#  define EQ(n,m) CMP_MKBOOL(CMP_EQ(n,m))
 #  define PLUS(n,m) (n +# m)
 #  define MINUS(n,m) (n -# m)
 #  define TIMES(n,m) (n *# m)
@@ -3112,47 +6990,65 @@ alex_action_61 = \s -> error ("Lexical error: caracter no reconocido = "
 #ifdef ALEX_GHC
 data AlexAddr = AlexA# Addr#
 -- Do not remove this comment. Required to fix CPP parsing when using GCC and a clang-compiled alex.
+#if __GLASGOW_HASKELL__ < 503
+uncheckedShiftL# = shiftL#
+#endif
 
 {-# INLINE alexIndexInt16OffAddr #-}
 alexIndexInt16OffAddr :: AlexAddr -> Int# -> Int#
 alexIndexInt16OffAddr (AlexA# arr) off =
+#ifdef WORDS_BIGENDIAN
+  narrow16Int# i
+  where
+        i    = word2Int# ((high `uncheckedShiftL#` 8#) `or#` low)
+        high = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))
+        low  = int2Word# (ord# (indexCharOffAddr# arr off'))
+        off' = off *# 2#
+#else
 #if __GLASGOW_HASKELL__ >= 901
-  GHC.Exts.int16ToInt# -- qualified import because it doesn't exist on older GHC's
+  int16ToInt#
 #endif
-#ifdef WORDS_BIGENDIAN
-  (GHC.Exts.word16ToInt16# (GHC.Exts.wordToWord16# (GHC.Exts.byteSwap16# (GHC.Exts.word16ToWord# (GHC.Exts.int16ToWord16#
-#endif
-  (indexInt16OffAddr# arr off)
-#ifdef WORDS_BIGENDIAN
-  )))))
+    (indexInt16OffAddr# arr off)
 #endif
 #else
-alexIndexInt16OffAddr = (Data.Array.!)
+alexIndexInt16OffAddr arr off = arr ! off
 #endif
 
 #ifdef ALEX_GHC
 {-# INLINE alexIndexInt32OffAddr #-}
 alexIndexInt32OffAddr :: AlexAddr -> Int# -> Int#
 alexIndexInt32OffAddr (AlexA# arr) off =
+#ifdef WORDS_BIGENDIAN
+  narrow32Int# i
+  where
+   i    = word2Int# ((b3 `uncheckedShiftL#` 24#) `or#`
+                     (b2 `uncheckedShiftL#` 16#) `or#`
+                     (b1 `uncheckedShiftL#` 8#) `or#` b0)
+   b3   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 3#)))
+   b2   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 2#)))
+   b1   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))
+   b0   = int2Word# (ord# (indexCharOffAddr# arr off'))
+   off' = off *# 4#
+#else
 #if __GLASGOW_HASKELL__ >= 901
-  GHC.Exts.int32ToInt# -- qualified import because it doesn't exist on older GHC's
+  int32ToInt#
 #endif
-#ifdef WORDS_BIGENDIAN
-  (GHC.Exts.word32ToInt32# (GHC.Exts.wordToWord32# (GHC.Exts.byteSwap32# (GHC.Exts.word32ToWord# (GHC.Exts.int32ToWord32#
-#endif
-  (indexInt32OffAddr# arr off)
-#ifdef WORDS_BIGENDIAN
-  )))))
+    (indexInt32OffAddr# arr off)
 #endif
 #else
-alexIndexInt32OffAddr = (Data.Array.!)
+alexIndexInt32OffAddr arr off = arr ! off
 #endif
 
 #ifdef ALEX_GHC
+
+#if __GLASGOW_HASKELL__ < 503
+quickIndex arr i = arr ! i
+#else
 -- GHC >= 503, unsafeAt is available from Data.Array.Base.
 quickIndex = unsafeAt
+#endif
 #else
-quickIndex = (Data.Array.!)
+quickIndex arr i = arr ! i
 #endif
 
 -- -----------------------------------------------------------------------------
@@ -3166,12 +7062,7 @@ data AlexReturn a
 
 -- alexScan :: AlexInput -> StartCode -> AlexReturn a
 alexScan input__ IBOX(sc)
-  = alexScanUser (error "alex rule requiring context was invoked by alexScan; use alexScanUser instead?") input__ IBOX(sc)
-
--- If the generated alexScan/alexScanUser functions are called multiple times
--- in the same file, alexScanUser gets broken out into a separate function and
--- increases memory usage. Make sure GHC inlines this function and optimizes it.
-{-# INLINE alexScanUser #-}
+  = alexScanUser undefined input__ IBOX(sc)
 
 alexScanUser user__ input__ IBOX(sc)
   = case alex_scan_tkn user__ input__ ILIT(0) input__ sc AlexNone of
@@ -3179,26 +7070,26 @@ alexScanUser user__ input__ IBOX(sc)
     case alexGetByte input__ of
       Nothing ->
 #ifdef ALEX_DEBUG
-                                   Debug.Trace.trace ("End of input.") $
+                                   trace ("End of input.") $
 #endif
                                    AlexEOF
       Just _ ->
 #ifdef ALEX_DEBUG
-                                   Debug.Trace.trace ("Error.") $
+                                   trace ("Error.") $
 #endif
                                    AlexError input__'
 
   (AlexLastSkip input__'' len, _) ->
 #ifdef ALEX_DEBUG
-    Debug.Trace.trace ("Skipping.") $
+    trace ("Skipping.") $
 #endif
     AlexSkip input__'' len
 
   (AlexLastAcc k input__''' len, _) ->
 #ifdef ALEX_DEBUG
-    Debug.Trace.trace ("Accept.") $
+    trace ("Accept.") $
 #endif
-    AlexToken input__''' len ((Data.Array.!) alex_actions k)
+    AlexToken input__''' len (alex_actions ! k)
 
 
 -- Push the input through the DFA, remembering the most recent accepting
@@ -3214,7 +7105,7 @@ alex_scan_tkn user__ orig_input len input__ s last_acc =
      Nothing -> (new_acc, input__)
      Just (c, new_input) ->
 #ifdef ALEX_DEBUG
-      Debug.Trace.trace ("State: " ++ show IBOX(s) ++ ", char: " ++ show c ++ " " ++ (show . Data.Char.chr . fromIntegral) c) $
+      trace ("State: " ++ show IBOX(s) ++ ", char: " ++ show c) $
 #endif
       case fromIntegral c of { IBOX(ord_c) ->
         let
@@ -3285,7 +7176,7 @@ alexPrevCharIs c _ input__ _ _ = c == alexInputPrevChar input__
 alexPrevCharMatches f _ input__ _ _ = f (alexInputPrevChar input__)
 
 --alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _
-alexPrevCharIsOneOf arr _ input__ _ _ = arr Data.Array.! alexInputPrevChar input__
+alexPrevCharIsOneOf arr _ input__ _ _ = arr ! alexInputPrevChar input__
 
 --alexRightContext :: Int -> AlexAccPred _
 alexRightContext IBOX(sc) user__ _ _ input__ =
@@ -3296,7 +7187,7 @@ alexRightContext IBOX(sc) user__ _ _ input__ =
         -- match when checking the right context, just
         -- the first match will do.
 #endif
-{-# LINE 96 "Lexer.x" #-}
+{-# LINE 64 "Lexer.x" #-}
 data Token
   = TokenId String
   | TokenNum Int
