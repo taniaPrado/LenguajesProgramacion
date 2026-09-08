@@ -13,6 +13,8 @@ $letter = [A-Za-z_]
 $idrest = [A-Za-z0-9_]
 
 @nat = 0 | $nonzero $digit*
+@id = $letter $idrest*
+
 
 tokens :-
 
@@ -49,9 +51,9 @@ tokens :-
   -- Agrega, en el orden correcto, las reglas para:
   --   let, let* e identificadores.
 
-    let                   { \_ -> TokenLet }              
-    let*                  { \_ -> TokenLetStar }
-    $letter $idrest*      { \s -> TokenId s } 
+  "let*"                 { \_ -> TokenLetStar }              
+  let                   { \_ -> TokenLet }
+  @id                   { \s -> TokenId s } 
     
 
   .                     { \s -> error ("Lexical error: caracter no reconocido = "
@@ -89,6 +91,4 @@ data Token
 normalizeSpaces :: String -> String
 normalizeSpaces = map (\c -> if isSpace c then '\x20' else c)
 
-lexer :: String -> [Token]
-lexer = alexScanTokens . normalizeSpaces
-}
+lexer :: String -> 
