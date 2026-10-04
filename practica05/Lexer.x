@@ -13,31 +13,28 @@ $letter = [A-Za-z_]
 $idrest = [A-Za-z0-9_]
 
 @nat = 0 | $nonzero $digit*
-@id = $letter $idrest*
 
 tokens :-
 
   $white+               ;
 
-  -- Sintaxis heredada del laboratorio 02
   \(                    { \_ -> TokenPA }
   \)                    { \_ -> TokenPC }
   \+                    { \_ -> TokenSuma }
   \-                    { \_ -> TokenResta }
-  \*                    { \_ -> TokenMul }
-  \/                    { \_ -> TokenDiv }
-  "<="                  { \_ -> TokenLE }
-  ">="                  { \_ -> TokenGE }
-  \<                    { \_ -> TokenLT }
-  \>                    { \_ -> TokenGT }
-  and                   { \_ -> TokenAnd }
-  or                    { \_ -> TokenOr }
   not                   { \_ -> TokenNot }
-  add1                  { \_ -> TokenAdd1 }
-  sub1                  { \_ -> TokenSub1 }
-  "zero?"               { \_ -> TokenZeroP }
-  expt                  { \_ -> TokenExpt }
-  eq                    { \_ -> TokenEq }
+  let\*                 { \_ -> TokenLetStar }
+  let                   { \_ -> TokenLet }
+  lambda                { \_ -> TokenLambda }
+
+  -- RETO 1
+  -- Agrega aqui las reglas para if, cond, else y letrec. Las palabras
+  -- reservadas deben aparecer antes de la regla general de identificadores.
+
+  if                    { \_ -> TokenIf }
+  cond                  { \_ -> TokenCond }
+  else                  { \_ -> TokenElse }
+  letrec                { \_ -> TokenLetRec }
 
   "#t"                  { \_ -> TokenBool True }
   "#f"                  { \_ -> TokenBool False }
@@ -46,15 +43,7 @@ tokens :-
                                       ++ show s) }
   @nat                  { \s -> TokenNum (read s) }
 
-  -- RETO 1
-  -- Agrega, en el orden correcto, las reglas para:
-  --   let, let* e identificadores.
-
-
-   "let*"               { \_ -> TokenLetStar }
-   let                  { \_ -> TokenLet }
-   @id                  {\s -> TokenId s}
-
+  $letter$idrest*       { \s -> TokenId s }
 
   .                     { \s -> error ("Lexical error: caracter no reconocido = "
                                       ++ show s
@@ -68,22 +57,14 @@ data Token
   | TokenBool Bool
   | TokenSuma
   | TokenResta
-  | TokenMul
-  | TokenDiv
-  | TokenAnd
-  | TokenOr
   | TokenNot
-  | TokenAdd1
-  | TokenSub1
-  | TokenZeroP
-  | TokenExpt
-  | TokenLT
-  | TokenGT
-  | TokenLE
-  | TokenGE
-  | TokenEq
   | TokenLet
   | TokenLetStar
+  | TokenLambda
+  | TokenIf
+  | TokenCond
+  | TokenElse
+  | TokenLetRec
   | TokenPA
   | TokenPC
   deriving (Eq, Show)
@@ -91,4 +72,6 @@ data Token
 normalizeSpaces :: String -> String
 normalizeSpaces = map (\c -> if isSpace c then '\x20' else c)
 
-lexer :: String -> 
+lexer :: String -> [Token]
+lexer = alexScanTokens . normalizeSpaces
+}
