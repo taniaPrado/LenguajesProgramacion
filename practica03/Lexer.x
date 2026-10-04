@@ -91,6 +91,4 @@ data Token
 normalizeSpaces :: String -> String
 normalizeSpaces = map (\c -> if isSpace c then '\x20' else c)
 
-lexer :: String -> [Token]
-lexer = alexScanTokens . normalizeSpaces
-}
+lexer :: String -> 
